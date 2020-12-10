@@ -24,6 +24,7 @@ import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtTypeArgumentList
 import org.jetbrains.kotlin.psi.psiUtil.endOffset
 import org.jetbrains.kotlin.renderer.render
+import java.util.*
 
 internal class KotlinFirLookupElementFactory {
     private val classLookupElementFactory = ClassLookupElementFactory()
@@ -34,7 +35,7 @@ internal class KotlinFirLookupElementFactory {
     fun KtAnalysisSession.createLookupElement(symbol: KtNamedSymbol): LookupElement? {
         val elementBuilder = when (symbol) {
             is KtFunctionSymbol -> with(functionLookupElementFactory) { createLookup(symbol) }
-            is KtVariableLikeSymbol -> with(variableLookupElementFactory)  { createLookup(symbol) }
+            is KtVariableLikeSymbol -> with(variableLookupElementFactory) { createLookup(symbol) }
             is KtClassLikeSymbol -> classLookupElementFactory.createLookup(symbol)
             is KtTypeParameterSymbol -> typeParameterLookupElementFactory.createLookup(symbol)
             else -> throw IllegalArgumentException("Cannot create a lookup element for $symbol")
@@ -67,7 +68,25 @@ private class VariableLookupElementFactory {
     fun KtAnalysisSession.createLookup(symbol: KtVariableLikeSymbol): LookupElementBuilder {
         return LookupElementBuilder.create(UniqueLookupObject(), symbol.name.asString())
             .withTypeText(symbol.type.render())
+            .markPropertiesFromSyntheticJava(symbol)
             .withInsertHandler(createInsertHandler(symbol))
+    }
+
+    private fun LookupElementBuilder.markPropertiesFromSyntheticJava(symbol: KtVariableLikeSymbol): LookupElementBuilder = when (symbol) {
+        is KtSyntheticJavaPropertySymbol -> {
+            val getterName = symbol.javaGetterName.asString()
+            val setterName = symbol.javaSetterName?.asString()
+            this.withTailText(("(from ${buildSyntheticPropertyTailText(getterName, setterName)})"))
+                .withLookupStrings(listOfNotNull(getterName, setterName))
+        }
+        else -> this
+    }
+
+    private fun buildSyntheticPropertyTailText(getterName: String, setterName: String?): String = buildString {
+        append("$getterName()")
+        setterName?.let {
+            append("/$it()")
+        }
     }
 
     private fun createInsertHandler(symbol: KtVariableLikeSymbol): InsertHandler<LookupElement> {
